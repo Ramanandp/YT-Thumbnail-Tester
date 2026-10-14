@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "YouTube Thumbnail Tester",
+  "version": "0.1.2",
+  "description": "Preview your thumbnail and title on a selected YouTube home feed video. All drafts stay on your device.",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "background": { "scripts": ["background.js"] },
+  "action": {
+    "default_title": "Test a YouTube thumbnail",
+    "default_icon": { "32": "icons/icon.svg", "64": "icons/icon.svg" }
+  },
+  "icons": { "48": "icons/icon.svg", "96": "icons/icon.svg" },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "youtube-thumbnail-tester@local.example",
+      "strict_min_version": "128.0",
+      "data_collection_permissions": { "required": ["none"] }
+    }
+  }
+}
