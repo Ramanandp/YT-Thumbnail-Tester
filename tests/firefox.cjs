@@ -4,7 +4,46 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const puppeteer = require('puppeteer-core');
+const channelFixture = '<a class="channel-avatar" href="/@original"><img src="original-avatar.jpg" srcset="original-avatar-2x.jpg 2x" alt="Original channel" style="width:36px;height:36px;border-radius:50%"></a><a class="channel-name" href="/@original">Original channel</a>';
 const fixture = `<!doctype html><style>body{margin:0;padding:100px 40px;min-height:2400px}ytd-rich-item-renderer{display:block;width:300px}ytd-thumbnail{display:block;width:100%;height:170px;background:#555;border-radius:12px}a{display:block}img{width:100%;height:170px}#sticky{position:fixed;top:0;left:0;width:100%;height:60px;z-index:100;background:black}</style><div id="sticky"></div><ytd-rich-item-renderer><ytd-thumbnail><a href="/watch?v=one"><img alt="Thumbnail"></a></ytd-thumbnail><a id="video-title" href="/watch?v=one">Original video</a></ytd-rich-item-renderer>`;
+async function clickControl(page, selector) {
+  const box = await page.evaluate(selector => {
+    const control = document.querySelector('#yt-thumbnail-tester').shadowRoot.querySelector(selector);
+    control.scrollIntoView({ block: 'nearest' });
+    const r = control.getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2, width: r.width, height: r.height };
+  }, selector);
+  assert.ok(box.width > 0 && box.height > 0, `${selector} must be visible and clickable`);
+  await page.mouse.click(box.x, box.y);
+}
+async function checkModes(page) {
+  const inspect = () => page.evaluate(() => {
+    const root = document.querySelector('#yt-thumbnail-tester').shadowRoot;
+    const bar = root.querySelector('.preview-bar').getBoundingClientRect();
+    return { editHidden: root.querySelector('.panel').hidden, barHidden: root.querySelector('.preview-bar').hidden, on: root.querySelector('#preview-toggle').getAttribute('aria-checked'), width: bar.width, height: bar.height, right: innerWidth - bar.right, top: bar.top, outline: root.querySelector('.highlight').style.display };
+  });
+  let state = await inspect();
+  assert.equal(state.editHidden, true); assert.equal(state.barHidden, false); assert.equal(state.on, 'true');
+  assert.ok(state.height < 80 && state.width < 360, 'Preview Mode uses a compact bar');
+  assert.ok(Math.abs(state.right - 24) < 0.5); assert.equal(state.top, 84);
+  await clickControl(page, '#preview-toggle');
+  state = await inspect(); assert.equal(state.on, 'false'); assert.equal(state.outline, 'none');
+  assert.equal(await page.$eval('#video-title', title => title.textContent), 'Original video');
+  await checkChannelRestored(page);
+  await clickControl(page, '#edit-mode');
+  state = await inspect(); assert.equal(state.editHidden, false); assert.equal(state.barHidden, true); assert.equal(state.on, 'false');
+  assert.equal(await page.$eval('#video-title', title => title.textContent), 'Original video');
+  await clickControl(page, '#apply');
+  state = await inspect(); assert.equal(state.on, 'true'); assert.equal(state.editHidden, true);
+  // Native button keyboard behavior must toggle the accessible switch too.
+  await page.evaluate(() => document.querySelector('#yt-thumbnail-tester').shadowRoot.querySelector('#preview-toggle').focus());
+  await page.keyboard.press(' '); assert.equal((await inspect()).on, 'false');
+  await page.keyboard.press(' '); assert.equal((await inspect()).on, 'true');
+  await clickControl(page, '#edit-mode');
+  state = await inspect(); assert.equal(state.editHidden, false); assert.equal(state.on, 'true');
+  assert.equal(await page.$eval('#video-title', title => title.textContent), 'Test title');
+  await clickControl(page, '#apply');
+}
 async function checkAlignment(page) {
   const initial = await page.evaluate(() => {
     const overlay = document.querySelector('[data-yt-thumbnail-preview]');
@@ -14,7 +53,7 @@ async function checkAlignment(page) {
     window.coverObserver = new MutationObserver(records => { window.coverMutations += records.length; });
     window.coverObserver.observe(overlay, { attributes: true });
     window.coverObserver.observe(overlay.shadowRoot.querySelector('img'), { attributes: true });
-    const r = document.querySelector('#yt-thumbnail-tester').shadowRoot.querySelector('.panel').getBoundingClientRect();
+    const r = document.querySelector('#yt-thumbnail-tester').shadowRoot.querySelector('.preview-bar').getBoundingClientRect();
     return { panelTop: r.top, panelRight: innerWidth - r.right };
   });
   const verify = async () => {
@@ -22,7 +61,7 @@ async function checkAlignment(page) {
       const overlay = document.querySelector('[data-yt-thumbnail-preview]');
       const thumb = overlay.parentElement, image = overlay.shadowRoot.querySelector('img');
       const expected = thumb.getBoundingClientRect(), actual = image.getBoundingClientRect();
-      const panel = document.querySelector('#yt-thumbnail-tester').shadowRoot.querySelector('.panel').getBoundingClientRect();
+      const panel = document.querySelector('#yt-thumbnail-tester').shadowRoot.querySelector('.preview-bar').getBoundingClientRect();
       return {
         errors: ['left', 'top', 'width', 'height'].map(key => Math.abs(expected[key] - actual[key])),
         absolute: getComputedStyle(overlay).position === 'absolute', pointerEvents: getComputedStyle(overlay).pointerEvents,
@@ -35,7 +74,7 @@ async function checkAlignment(page) {
     assert.ok(result.errors.every(error => error < 0.5), `Preview must match thumbnail: ${JSON.stringify(result.errors)}`);
     assert.equal(result.absolute, true); assert.equal(result.pointerEvents, 'none');
     assert.equal(result.radius, result.thumbRadius); assert.equal(result.unchanged, true, 'scroll/resize must not reposition the overlay through JavaScript');
-    assert.equal(result.panelTop, initial.panelTop); assert.equal(result.panelRight, initial.panelRight);
+    assert.ok(Math.abs(result.panelTop - initial.panelTop) < 0.5); assert.ok(Math.abs(result.panelRight - initial.panelRight) < 0.5);
     assert.equal(result.outline, 'none');
   };
   await verify();
@@ -81,7 +120,7 @@ async function checkAlignment(page) {
     const page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 800 });
     await page.setRequestInterception(true);
-    page.on('request', request => request.respond({ status: 200, contentType: 'text/html', body: fixture }));
+    page.on('request', request => request.respond({ status: 200, contentType: 'text/html', body: fixture.replace('</ytd-rich-item-renderer>', `${channelFixture}</ytd-rich-item-renderer>`) }));
     await page.goto('https://www.youtube.com/');
     await page.evaluate(() => {
       window.navigations = 0;
@@ -95,6 +134,7 @@ async function checkAlignment(page) {
       const transfer = new DataTransfer(); transfer.items.add(new File([blob], 'thumbnail.png', { type: 'image/png' }));
       const input = root.querySelector('#image'); input.files = transfer.files; input.dispatchEvent(new Event('change'));
       root.querySelector('#title').value = 'Test title'; root.querySelector('#title').dispatchEvent(new Event('input'));
+      root.querySelector('#channel-name').value = 'eridium'; root.querySelector('#channel-name').dispatchEvent(new Event('input', { bubbles: true }));
     });
     await page.waitForFunction(() => !document.querySelector('#yt-thumbnail-tester').shadowRoot.querySelector('.preview').hidden);
     await page.evaluate(() => document.querySelector('#yt-thumbnail-tester').shadowRoot.querySelector('#select').click());
@@ -107,32 +147,76 @@ async function checkAlignment(page) {
     console.log(JSON.stringify(result));
     assert.equal(result.enabled, true, result.status);
     assert.equal(result.navigations, 0);
-    await page.evaluate(() => document.querySelector('#yt-thumbnail-tester').shadowRoot.querySelector('#apply').click());
+    fs.mkdirSync('dist', { recursive: true });
+    await page.screenshot({ path: 'dist/edit-mode.png' });
+    await clickControl(page, '#apply');
+    await checkModes(page);
+    await page.screenshot({ path: 'dist/preview-mode.png' });
     assert.equal(await page.$eval('#video-title', title => title.textContent), 'Test title');
+    await checkChannel(page, false);
     await checkAlignment(page);
-    await page.evaluate(() => document.querySelector('#yt-thumbnail-tester').shadowRoot.querySelector('#restore').click());
+    await clickControl(page, '#preview-toggle');
     assert.equal(await page.$eval('#video-title', title => title.textContent), 'Original video');
+    await checkChannelRestored(page);
     assert.equal(await page.$eval('ytd-thumbnail', thumb => thumb.hasAttribute('style')), false);
     for (const className of ['ytLockupViewModelHost', 'experimental-video-card']) {
-      await page.evaluate(className => {
+      await page.evaluate(({ className, channelFixture }) => {
         const original = document.querySelector('ytd-rich-item-renderer');
         original.outerHTML = `<div class="${className}" style="width:300px"><a href="/watch?v=modern" style="width:100%;height:170px;background:#555;border-radius:14px"><img style="width:100%;height:170px"></a><h3><a class="ytLockupMetadataViewModelTitle" href="/watch?v=modern">Modern video</a></h3></div>`;
+        document.querySelector(`.${className}`).insertAdjacentHTML('beforeend', channelFixture);
         window.originalThumbnailStyle = document.querySelector(`.${className} > a`).style.cssText;
-        document.querySelector('#yt-thumbnail-tester').shadowRoot.querySelector('#select').click();
-      }, className);
+      }, { className, channelFixture });
+      await page.waitForFunction(() => {
+        const root = document.querySelector('#yt-thumbnail-tester').shadowRoot;
+        return !root.querySelector('.panel').hidden && root.querySelector('#apply').disabled;
+      });
+      await page.evaluate(() => document.querySelector('#yt-thumbnail-tester').shadowRoot.querySelector('#select').click());
       await page.mouse.move(150, 150); await page.mouse.click(150, 150);
       assert.equal(await page.evaluate(() => document.querySelector('#yt-thumbnail-tester').shadowRoot.querySelector('#apply').disabled), false, `${className} is selectable`);
       await page.evaluate(() => document.querySelector('#yt-thumbnail-tester').shadowRoot.querySelector('#apply').click());
       assert.equal(await page.$eval('h3 a', title => title.textContent), 'Test title');
+      await checkChannel(page, className === 'experimental-video-card');
       await checkAlignment(page);
-      await page.evaluate(() => document.querySelector('#yt-thumbnail-tester').shadowRoot.querySelector('#restore').click());
+      await page.evaluate(() => document.querySelector('#yt-thumbnail-tester').shadowRoot.querySelector('#preview-toggle').click());
       assert.equal(await page.$eval('h3 a', title => title.textContent), 'Modern video');
       assert.equal(await page.$eval('h3 a', title => title.getAttribute('href')), '/watch?v=modern');
+      await checkChannelRestored(page);
       assert.equal(await page.evaluate(className => document.querySelector(`.${className} > a`).style.cssText === window.originalThumbnailStyle, className), true);
       await page.evaluate(() => { const card = document.querySelector('.ytLockupViewModelHost, .experimental-video-card'); const replacement = document.createElement('ytd-rich-item-renderer'); card.replaceWith(replacement); });
     }
     assert.equal(page.url(), 'https://www.youtube.com/');
     assert.equal(await page.evaluate(() => window.navigations), 0);
-    console.log('Firefox selection, scroll/resize alignment without JS repositioning, hover coverage, and restoration passed for all three card layouts.');
+    console.log('Firefox selection, scroll/resize alignment, channel names, default/custom avatars, hover coverage, and restoration passed for all three card layouts.');
   } finally { await browser.close(); fs.rmSync(extensionDir, { recursive: true, force: true }); }
 })().catch(error => { console.error(error); process.exitCode = 1; });
+async function checkChannel(page, custom) {
+  assert.equal(await page.$eval('.channel-name', name => name.textContent), 'eridium');
+  assert.equal(await page.$eval('.channel-name', name => name.getAttribute('href')), '/@original');
+  await page.waitForFunction(() => document.querySelector('.channel-avatar img').naturalWidth > 0);
+  const svg = await page.$eval('.channel-avatar img', avatar => {
+    const doc = new DOMParser().parseFromString(decodeURIComponent(avatar.getAttribute('src').split(',')[1]), 'image/svg+xml');
+    return { letter: doc.querySelector('text').textContent, color: doc.querySelector('rect').getAttribute('fill'), srcset: avatar.hasAttribute('srcset') };
+  });
+  assert.equal(svg.letter, 'E'); assert.equal(svg.color, '#5364b8'); assert.equal(svg.srcset, false);
+  if (custom) {
+    await page.evaluate(async () => {
+      const root = document.querySelector('#yt-thumbnail-tester').shadowRoot;
+      root.querySelector('#edit-mode').click();
+      const canvas = document.createElement('canvas'); canvas.width = canvas.height = 32;
+      const blob = await new Promise(resolve => canvas.toBlob(resolve));
+      const transfer = new DataTransfer(); transfer.items.add(new File([blob], 'avatar.png', { type: 'image/png' }));
+      const input = root.querySelector('#channel-image'); input.files = transfer.files; input.dispatchEvent(new Event('change'));
+    });
+    await page.waitForFunction(() => !document.querySelector('#yt-thumbnail-tester').shadowRoot.querySelector('#default-avatar').disabled);
+    await page.evaluate(() => document.querySelector('#yt-thumbnail-tester').shadowRoot.querySelector('#apply').click());
+    assert.ok((await page.$eval('.channel-avatar img', avatar => avatar.src)).startsWith('data:image/png;base64,'));
+    await page.evaluate(() => { const root = document.querySelector('#yt-thumbnail-tester').shadowRoot; root.querySelector('#edit-mode').click(); root.querySelector('#default-avatar').click(); root.querySelector('#apply').click(); });
+    assert.ok((await page.$eval('.channel-avatar img', avatar => avatar.src)).startsWith('data:image/svg+xml;'));
+  }
+}
+async function checkChannelRestored(page) {
+  assert.equal(await page.$eval('.channel-name', name => name.textContent), 'Original channel');
+  const avatar = await page.$eval('.channel-avatar img', img => ({ src: img.getAttribute('src'), srcset: img.getAttribute('srcset'), alt: img.alt, style: img.style.cssText }));
+  assert.equal(avatar.src, 'original-avatar.jpg'); assert.equal(avatar.srcset, 'original-avatar-2x.jpg 2x');
+  assert.equal(avatar.alt, 'Original channel'); assert.equal(avatar.style, 'width: 36px; height: 36px; border-radius: 50%;');
+}

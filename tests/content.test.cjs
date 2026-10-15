@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const { JSDOM } = require('jsdom');
 const source = fs.readFileSync('extension/content.js', 'utf8');
 const thumbnail = 'data:image/png;base64,aGVsbG8=';
-const fixture = `<ytd-rich-item-renderer id="one"><ytd-thumbnail><a href="/watch?v=one"><img src="original.jpg"></a></ytd-thumbnail><a id="video-title" title="Original"><span>Original title</span></a><div>Channel · 10K views</div></ytd-rich-item-renderer>
+const fixture = `<ytd-rich-item-renderer id="one"><ytd-thumbnail><a href="/watch?v=one"><img src="original.jpg"></a></ytd-thumbnail><a id="video-title" title="Original"><span>Original title</span></a><a class="channel-name" href="/@original" title="Original channel"><span>Original channel</span></a><a id="avatar-link" href="/@original"><img src="avatar.jpg" srcset="avatar-2x.jpg 2x" sizes="36px" alt="Original channel" style="border-radius: 8px;"></a><div>10K views</div></ytd-rich-item-renderer>
 <yt-lockup-view-model id="two"><a class="yt-lockup-view-model__content-image" href="/watch?v=two"><img src="second.jpg"></a><h3 class="yt-lockup-metadata-view-model__title"><a href="/watch?v=two">Second title</a></h3></yt-lockup-view-model>
 <ytd-rich-item-renderer id="playlist"><ytd-thumbnail><a href="/watch?v=three&list=PL1">Playlist</a></ytd-thumbnail><a id="video-title">Playlist</a></ytd-rich-item-renderer>
 <ytd-rich-item-renderer id="short"><ytd-thumbnail><a href="/shorts/123">Short</a></ytd-thumbnail><a id="video-title">Short</a></ytd-rich-item-renderer>
@@ -25,7 +25,7 @@ async function setup(options = {}) {
   await new Promise(resolve => setImmediate(resolve));
   const root = w.document.getElementById('yt-thumbnail-tester').shadowRoot;
   const $ = selector => root.querySelector(selector);
-  const select = id => { $('#select').click(); const card = w.document.getElementById(id); return card.querySelector('a').dispatchEvent(new w.MouseEvent('click', { bubbles: true, cancelable: true })); };
+  const select = id => { if ($('.panel').hidden) $('#edit-mode').click(); $('#select').click(); const card = w.document.getElementById(id); return card.querySelector('a').dispatchEvent(new w.MouseEvent('click', { bubbles: true, cancelable: true })); };
   const tick = () => { const cb = nextFrame; nextFrame = null; cb?.(); };
   const flush = () => new Promise(resolve => setImmediate(resolve));
   return { dom, w, root, $, select, tick, flush, saved };
@@ -46,7 +46,7 @@ test('loads a draft without applying it, selects without navigation, restores ac
   assert.equal(heading.textContent, 'My new video');
   assert.ok(c.w.document.querySelector('#one ytd-thumbnail > [data-yt-thumbnail-preview]'));
   assert.equal(c.w.document.querySelector('#one ytd-thumbnail a').getAttribute('href'), '/watch?v=one');
-  c.$('#restore').click();
+  c.$('#preview-toggle').click();
   assert.equal(heading.firstChild, original);
   assert.equal(heading.getAttribute('title'), 'Original');
   assert.equal(heading.hasAttribute('aria-label'), false);
@@ -115,7 +115,7 @@ test('modern class-based cards are selected through the shield and retain their 
   c.$('#apply').click();
   assert.equal(card.querySelector('h3 a').textContent, 'My new video');
   assert.equal(card.querySelector('h3 a').getAttribute('href'), '/watch?v=modern');
-  c.$('#restore').click();
+  c.$('#preview-toggle').click();
   assert.equal(card.querySelector('h3 a').textContent, 'Modern video');
 });
 test('renamed renderers use the watch link, thumbnail and title instead of fixed class names', async t => {
@@ -137,8 +137,8 @@ test('renamed renderers use the watch link, thumbnail and title instead of fixed
     assert.equal(c.$('#apply').disabled, false);
     c.$('#apply').click(); c.tick();
     assert.equal(card.querySelector('h3 a').textContent, 'My new video');
-    assert.equal(c.$('#restore').disabled, false);
-    c.$('#restore').click();
+    assert.equal(c.$('#preview-toggle').disabled, false);
+    c.$('#preview-toggle').click();
     assert.equal(card.querySelector('h3 a').textContent, 'Renamed title');
   }
 });
@@ -180,7 +180,7 @@ test('removed and recycled cards clear preview without overwriting YouTube updat
   assert.equal(c.$('#apply').disabled, true);
   assert.equal(c.w.document.querySelector('[data-yt-thumbnail-preview]'), null);
   c.select('two'); c.$('#apply').click(); c.w.document.getElementById('two').remove(); c.tick();
-  assert.equal(c.$('#restore').disabled, true);
+  assert.equal(c.$('#preview-toggle').disabled, true);
 });
 test('navigation and toolbar toggling clean up and reopening creates only one panel', async t => {
   const c = await setup(); t.after(() => c.dom.window.close());
@@ -221,7 +221,7 @@ test('different tabs keep independent selection and preview state', async t => {
   const a = await setup(), b = await setup(); t.after(() => { a.dom.window.close(); b.dom.window.close(); });
   a.select('one'); a.$('#apply').click();
   assert.equal(b.w.document.querySelector('#one #video-title').textContent, 'Original title');
-  assert.equal(b.$('#restore').disabled, true);
+  assert.equal(b.$('#preview-toggle').disabled, true);
 });
 test('attached cover restores original positioning and isolation, preserving later page styles', async t => {
   for (const initial of [null, 'color: red; position: static !important; isolation: auto !important;', 'position: relative; isolation: isolate;']) {
@@ -236,7 +236,7 @@ test('attached cover restores original positioning and isolation, preserving lat
     assert.equal(overlay.shadowRoot.querySelector('img').style.pointerEvents, 'none');
     thumb.getBoundingClientRect = () => { throw Error('Preview positioning must not read viewport coordinates'); };
     c.tick();
-    c.$('#restore').click();
+    c.$('#preview-toggle').click();
     assert.equal(thumb.style.cssText, before);
     assert.equal(thumb.hasAttribute('style'), initial !== null);
     assert.equal(overlay.isConnected, false);
@@ -245,7 +245,7 @@ test('attached cover restores original positioning and isolation, preserving lat
   const thumb = c.w.document.querySelector('#one ytd-thumbnail');
   c.select('one'); c.$('#apply').click();
   thumb.style.setProperty('position', 'absolute', 'important');
-  c.$('#restore').click();
+  c.$('#preview-toggle').click();
   assert.equal(thumb.style.position, 'absolute');
   assert.equal(thumb.style.getPropertyPriority('position'), 'important');
 });
@@ -260,7 +260,175 @@ test('YouTube title changes and removed overlays clean up the attached preview a
     assert.equal(c.w.document.querySelector('[data-yt-thumbnail-preview]'), null);
     assert.equal(thumb.hasAttribute('style'), false);
     assert.equal(c.$('#apply').disabled, true);
-    assert.equal(c.$('#restore').disabled, true);
+    assert.equal(c.$('#preview-toggle').disabled, true);
     if (reason === 'title') assert.equal(c.w.document.querySelector('#one #video-title').textContent, 'Updated by YouTube');
+  }
+});
+test('channel name and default avatar preview apply together and restore original nodes and image attributes', async t => {
+  const c = await setup(); t.after(() => c.dom.window.close());
+  const name = c.w.document.querySelector('#one .channel-name'), originalNode = name.firstChild;
+  const avatar = c.w.document.querySelector('#one #avatar-link img');
+  const attributes = () => Object.fromEntries([...avatar.attributes].map(a => [a.name, a.value]).sort());
+  const originalAvatar = attributes();
+  c.$('#channel-name').value = '  @eridium  ';
+  c.$('#channel-name').dispatchEvent(new c.w.Event('input', { bubbles: true }));
+  const svg = new c.w.DOMParser().parseFromString(decodeURIComponent(c.$('#channel-preview').src.split(',')[1]), 'image/svg+xml');
+  assert.equal(svg.querySelector('text').textContent, 'E');
+  assert.equal(svg.querySelector('rect').getAttribute('fill'), '#5364b8');
+  c.select('one'); c.$('#apply').click(); c.tick();
+  assert.equal(name.textContent, '@eridium');
+  assert.equal(name.getAttribute('href'), '/@original');
+  assert.equal(avatar.getAttribute('src'), c.$('#channel-preview').src);
+  assert.equal(avatar.hasAttribute('srcset'), false);
+  assert.equal(c.$('.highlight').style.display, 'none');
+  await c.flush(); assert.equal(c.saved.at(-1).draft.channelName, '  @eridium  ');
+  c.$('#preview-toggle').click();
+  assert.equal(name.firstChild, originalNode);
+  assert.equal(name.getAttribute('title'), 'Original channel');
+  assert.equal(name.hasAttribute('aria-label'), false);
+  assert.deepEqual(attributes(), originalAvatar);
+});
+test('avatar uploads are validated, saved, and can be reset to a safe capitalized initial', async t => {
+  const c = await setup(); t.after(() => c.dom.window.close());
+  const upload = async file => {
+    if (c.$('.panel').hidden) c.$('#edit-mode').click();
+    Object.defineProperty(c.$('#channel-image'), 'files', { configurable: true, value: [file] });
+    c.$('#channel-image').dispatchEvent(new c.w.Event('change'));
+    await new Promise(resolve => setTimeout(resolve, 30));
+  };
+  await upload(new c.w.File(['image'], 'avatar.webp', { type: 'image/webp' }));
+  assert.match(c.$('#channel-preview').src, /^data:image\/webp;base64,/);
+  const src = c.$('#channel-preview').src;
+  c.select('one'); c.$('#apply').click();
+  assert.equal(c.w.document.querySelector('#one #avatar-link img').src, src);
+  await upload(new c.w.File(['svg'], 'bad.svg', { type: 'image/svg+xml' }));
+  assert.equal(c.$('#channel-preview').src, src);
+  assert.match(c.$('.status').textContent, /Choose a JPEG/);
+  await upload({ type: 'image/png', size: 10 * 1024 * 1024 + 1 });
+  assert.match(c.$('.status').textContent, /10 MB/);
+  c.$('#channel-name').value = '<script>';
+  c.$('#channel-name').dispatchEvent(new c.w.Event('input', { bubbles: true }));
+  c.$('#default-avatar').click(); await c.flush();
+  assert.equal(c.saved.at(-1).draft.channelImage, '');
+  const svg = new c.w.DOMParser().parseFromString(decodeURIComponent(c.$('#channel-preview').src.split(',')[1]), 'image/svg+xml');
+  assert.equal(svg.querySelector('text').textContent, '<');
+  assert.equal(svg.querySelector('script'), null);
+  // Editing a draft alone leaves the applied image intact until Apply is clicked.
+  assert.equal(c.w.document.querySelector('#one #avatar-link img').src, src);
+  c.$('#apply').click();
+  assert.equal(c.w.document.querySelector('#one #avatar-link img').src, c.$('#channel-preview').src);
+});
+test('channel drafts reopen without applying, support older drafts, and preserve YouTube updates', async t => {
+  const c = await setup({ draft: { image: thumbnail, title: 'Draft', channelName: 'alice', channelImage: thumbnail } }); t.after(() => c.dom.window.close());
+  assert.equal(c.$('#channel-name').value, 'alice');
+  assert.equal(c.$('#channel-preview').src, thumbnail);
+  const name = c.w.document.querySelector('#one .channel-name'), avatar = c.w.document.querySelector('#one #avatar-link img');
+  assert.equal(name.textContent, 'Original channel');
+  c.select('one'); c.$('#apply').click();
+  avatar.setAttribute('src', 'updated-by-youtube.jpg'); c.tick();
+  assert.equal(avatar.getAttribute('src'), 'updated-by-youtube.jpg');
+  assert.equal(name.textContent, 'Original channel');
+  assert.equal(c.$('#preview-toggle').disabled, true);
+  const old = await setup(); t.after(() => old.dom.window.close());
+  assert.equal(old.$('#channel-name').value, 'Your channel');
+  assert.ok(old.$('#channel-preview').src.startsWith('data:image/svg+xml'));
+  old.select('one'); old.$('#apply').click();
+  old.w.document.querySelector('#one .channel-name').textContent = 'Updated channel'; old.tick();
+  assert.equal(old.w.document.querySelector('#one .channel-name').textContent, 'Updated channel');
+  assert.equal(old.w.document.querySelector('#one #avatar-link img').getAttribute('src'), 'avatar.jpg');
+});
+test('apply collapses Edit Mode and repeated toggles preserve every original field and the target', async t => {
+  const c = await setup(); t.after(() => c.dom.window.close());
+  const card = c.w.document.getElementById('one');
+  const originalTitle = card.querySelector('#video-title').firstChild;
+  const originalName = card.querySelector('.channel-name').firstChild;
+  assert.equal(c.$('.panel').hidden, false);
+  assert.equal(c.$('.preview-bar').hidden, true);
+  assert.equal(c.$('#preview-toggle').getAttribute('role'), 'switch');
+  assert.equal(c.$('#restore'), null);
+  c.$('#channel-name').value = 'eridium';
+  c.$('#channel-name').dispatchEvent(new c.w.Event('input', { bubbles: true }));
+  c.select('one'); c.$('#apply').click();
+  assert.equal(c.$('.panel').hidden, true);
+  assert.equal(c.$('.preview-bar').hidden, false);
+  assert.equal(c.root.activeElement, c.$('#edit-mode'));
+  for (let n = 0; n < 4; n++) {
+    assert.equal(c.$('#preview-toggle').getAttribute('aria-checked'), 'true');
+    assert.equal(c.$('#preview-state').textContent, 'On');
+    assert.equal(card.querySelector('.channel-name').textContent, 'eridium');
+    assert.equal(card.querySelector('#video-title').textContent, 'My new video');
+    c.$('#preview-toggle').click(); c.tick();
+    assert.equal(c.$('#preview-toggle').disabled, false);
+    assert.equal(c.$('#preview-toggle').getAttribute('aria-checked'), 'false');
+    assert.equal(c.$('#preview-state').textContent, 'Off');
+    assert.equal(card.querySelector('#video-title').textContent, 'Original title');
+    assert.equal(card.querySelector('.channel-name').textContent, 'Original channel');
+    assert.equal(card.querySelector('#avatar-link img').getAttribute('srcset'), 'avatar-2x.jpg 2x');
+    assert.equal(c.w.document.querySelector('[data-yt-thumbnail-preview]'), null);
+    assert.equal(c.$('.highlight').style.display, 'none');
+    c.$('#preview-toggle').click(); c.tick();
+    assert.equal(c.$('.highlight').style.display, 'none');
+    assert.equal(card.querySelector('#avatar-link img').getAttribute('src'), c.$('#channel-preview').src);
+  }
+  c.$('.preview-bar .close').click();
+  assert.equal(card.querySelector('#video-title').textContent, 'Original title');
+  assert.equal(card.querySelector('.channel-name').textContent, 'Original channel');
+  assert.equal(card.querySelector('#avatar-link img').getAttribute('src'), 'avatar.jpg');
+  assert.equal(c.w.document.querySelector('#yt-thumbnail-tester'), null);
+  assert.equal(card.querySelector('#video-title').firstChild, originalTitle);
+  assert.equal(card.querySelector('.channel-name').firstChild, originalName);
+});
+test('returning to editing preserves On/Off and draft edits do not alter the applied configuration', async t => {
+  const c = await setup(); t.after(() => c.dom.window.close());
+  const heading = c.w.document.querySelector('#one #video-title');
+  c.select('one'); c.$('#apply').click();
+  c.$('#edit-mode').click();
+  assert.equal(c.$('.panel').hidden, false);
+  assert.equal(c.$('#preview-state').textContent, 'On');
+  assert.equal(heading.textContent, 'My new video');
+  c.$('#title').value = 'New draft title'; c.$('#title').dispatchEvent(new c.w.Event('input', { bubbles: true }));
+  c.$('#channel-name').value = 'Different channel';
+  assert.equal(heading.textContent, 'My new video');
+  // Even if a draft changes, the preview switch must use the applied snapshot.
+  c.$('#preview-toggle').click(); c.$('#preview-toggle').click();
+  assert.equal(heading.textContent, 'My new video');
+  assert.equal(c.w.document.querySelector('#one .channel-name').textContent, 'Your channel');
+  c.$('#apply').click();
+  assert.equal(heading.textContent, 'New draft title');
+  assert.equal(c.w.document.querySelector('#one .channel-name').textContent, 'Different channel');
+  c.$('#preview-toggle').click(); c.$('#edit-mode').click();
+  assert.equal(c.$('#preview-state').textContent, 'Off');
+  assert.equal(heading.textContent, 'Original title');
+  assert.equal(c.$('#title').value, 'New draft title');
+  c.$('#apply').click();
+  assert.equal(c.$('.panel').hidden, true);
+  assert.equal(c.$('#preview-state').textContent, 'On');
+});
+test('recycling the target while Preview is off returns to editing and disables the switch', async t => {
+  const c = await setup(); t.after(() => c.dom.window.close());
+  c.select('one'); c.$('#apply').click(); c.$('#preview-toggle').click();
+  c.w.document.querySelector('#one ytd-thumbnail a').href = '/watch?v=recycled';
+  c.w.document.querySelector('#one #video-title').textContent = 'Recycled video';
+  c.tick();
+  assert.equal(c.$('.panel').hidden, false);
+  assert.equal(c.$('.preview-bar').hidden, true);
+  assert.equal(c.$('#preview-toggle').disabled, true);
+  assert.equal(c.$('#apply').disabled, true);
+  assert.match(c.$('.status').textContent, /changed or was removed/);
+  assert.equal(c.w.document.querySelector('#one #video-title').textContent, 'Recycled video');
+});
+test('closing or navigating while off leaves original content and reopens in editing', async t => {
+  for (const action of ['close', 'navigate']) {
+    const c = await setup(); t.after(() => c.dom.window.close());
+    c.select('one'); c.$('#apply').click(); c.$('#preview-toggle').click();
+    if (action === 'close') c.$('.preview-bar .close').click();
+    else c.w.document.dispatchEvent(new c.w.Event('yt-navigate-start'));
+    assert.equal(c.w.document.querySelector('#yt-thumbnail-tester'), null);
+    assert.equal(c.w.document.querySelector('#one #video-title').textContent, 'Original title');
+    c.w.eval(source); await c.flush();
+    const root = c.w.document.querySelector('#yt-thumbnail-tester').shadowRoot;
+    assert.equal(root.querySelector('.panel').hidden, false);
+    assert.equal(root.querySelector('.preview-bar').hidden, true);
+    assert.equal(root.querySelector('#preview-toggle').disabled, true);
   }
 });

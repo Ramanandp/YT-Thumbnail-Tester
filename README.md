@@ -1,6 +1,6 @@
 # YouTube Thumbnail Tester
 
-A Firefox extension that previews your uploaded thumbnail and title on a real video card in the desktop YouTube home feed. No account, backend, network requests, or telemetry. The latest draft is stored locally in Firefox.
+A Firefox extension that previews your thumbnail, title, channel name, and channel image on a real video card in the desktop YouTube home feed. No account, backend, network requests, or telemetry. The latest draft is stored locally in Firefox.
 
 ## Load in Firefox
 
@@ -13,13 +13,18 @@ Temporary add-ons are removed when Firefox restarts. The build ZIP is unsigned a
 
 ## Use
 
-1. Upload a JPEG, PNG, or WebP image (maximum 10 MB).
-2. Type your title.
-3. Click **Select video**, then click a standard video card in the home feed. A transparent selection layer catches the gesture so YouTube cannot open the video. Unsupported cards stay in selection mode with a message. Press Escape or click **Cancel selection** to cancel.
-4. Click **Apply preview**. The thumbnail covers hover previews, while the original channel, view count, and video destination remain intact.
-5. Use **Restore original** to undo the preview, or select another card and apply to move it. Closing the panel or navigating restores the original card; refreshing removes the preview.
+The extension opens in **Edit Mode**, with sections for Video, Channel, and Target video. The editor scrolls, while its apply button stays visible in the footer.
 
-The last image and title are remembered, but reopening never applies them automatically. Uploading/editing a draft does not change an already applied preview until you click Apply again. The panel uses a dark appearance in either YouTube theme. A red `!` toolbar badge indicates an unsupported page or injection error; hover the icon for details.
+1. Upload a JPEG, PNG, or WebP thumbnail (maximum 10 MB).
+2. Type your title and username/channel name. The channel name defaults to **Your channel**; an empty name also uses this fallback.
+3. Optionally upload a channel image (JPEG, PNG, or WebP, up to 10 MB). Without an upload, the avatar is a solid blue color with the first letter of the channel name capitalized. A leading `@` is ignored when choosing the initial. Click **Use default image** to clear an upload.
+4. Click **Select video**, then click a standard video card in the home feed. A transparent selection layer catches the gesture so YouTube cannot open the video. Unsupported cards stay in selection mode with a message. Press Escape or click **Cancel selection** to cancel.
+5. Click **Apply & preview**. The editor collapses into a compact **Preview Mode** bar at the top right. The thumbnail covers hover previews, and your channel name and image replace the original appearance. View counts, upload age, video destination, and channel links remain intact.
+6. Use the **Preview On/Off** switch to compare with the original card. Off restores all original fields; On reapplies the last applied configuration. The selection outline stays hidden in both states.
+7. Click **Edit Mode** to bring back the editor without changing whether the preview is On or Off. Edit the draft or use **Change video**, then click **Apply & preview** to show the updated preview and collapse the editor again.
+8. Close either interface with **×** to restore the original card and remove the tester. Navigating also closes it; refreshing removes the preview. A removed or recycled target returns the tester to Edit Mode with an explanation, including when Preview is Off.
+
+The last thumbnail, title, channel name, and optional channel image are remembered, but reopening always starts in Edit Mode and never applies them automatically. Uploading/editing a draft does not change an already applied preview until you apply again. The applied configuration, selected video, mode, and On/Off state are independent in each tab. The interface uses a dark appearance in either YouTube theme. A red `!` toolbar badge indicates an unsupported page or injection error; hover the icon for details.
 
 ## Development
 
@@ -35,12 +40,13 @@ npm run build
 
 The unsigned package is written to `dist/`. Plain JavaScript is used without a runtime framework or build step. Development dependencies are for DOM tests, Firefox browser tests, and Mozilla’s `web-ext` validation/packaging only.
 
-`test:firefox` uses an isolated headless Firefox profile with the real extension content-script context and actual mouse hit testing against offline video-card fixtures. It requires an installed Firefox; set `FIREFOX_PATH` if it is not at the default Windows installation path. It tests selection, scroll/resize alignment without JavaScript repositioning, hover coverage, and restoration for legacy, camelCase, and renamed card layouts without accessing your existing Firefox profile.
+`test:firefox` uses an isolated headless Firefox profile with the real extension content-script context and actual mouse hit testing against offline video-card fixtures. It requires an installed Firefox; set `FIREFOX_PATH` if it is not at the default Windows installation path. It tests Edit/Preview transitions, mouse and keyboard toggles, scroll/resize alignment without JavaScript repositioning, hover coverage, and restoration for legacy, camelCase, and renamed card layouts without accessing your existing Firefox profile. It also saves layout screenshots to `dist/`.
 
 ## Limitations and manual verification
 
 - Supports only the desktop `www.youtube.com` homepage, standard video cards, and one preview per tab. Shorts, ads, playlists, search results, and watch-page recommendations are excluded.
 - YouTube changes its markup frequently. Unsupported card layouts cannot be selected. Cards that are removed or recycled clear the preview rather than transferring it to a different video.
+- If a card's channel name or avatar cannot be found, the thumbnail/title preview still works and the panel explains that channel customization was incomplete.
 - The thumbnail preview is attached inside the original thumbnail container, so it scrolls and resizes with the video card. It covers hover previews and allows clicks through to the original link. The tester panel stays fixed on screen. This does not upload or publish anything and does not measure CTR.
 - Signing/store submission, Android support, and multiple candidates are outside this prototype.
 
