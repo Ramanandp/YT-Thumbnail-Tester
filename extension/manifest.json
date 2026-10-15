@@ -1,9 +1,10 @@
 {
   "manifest_version": 3,
   "name": "YouTube Thumbnail Tester",
-  "version": "0.3.0",
+  "version": "0.4.2",
   "description": "Preview your thumbnail, title, channel name and image on a YouTube home feed video. All drafts stay on your device.",
   "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": ["https://www.youtube.com/*"],
   "background": { "scripts": ["background.js"] },
   "action": {
     "default_title": "Test a YouTube thumbnail",

@@ -24,7 +24,7 @@ async function checkModes(page) {
   });
   let state = await inspect();
   assert.equal(state.editHidden, true); assert.equal(state.barHidden, false); assert.equal(state.on, 'true');
-  assert.ok(state.height < 80 && state.width < 360, 'Preview Mode uses a compact bar');
+  assert.ok(state.height < 80 && state.width < 520, 'Preview Mode uses a compact bar');
   assert.ok(Math.abs(state.right - 24) < 0.5); assert.equal(state.top, 84);
   await clickControl(page, '#preview-toggle');
   state = await inspect(); assert.equal(state.on, 'false'); assert.equal(state.outline, 'none');
@@ -137,7 +137,9 @@ async function checkAlignment(page) {
       root.querySelector('#channel-name').value = 'eridium'; root.querySelector('#channel-name').dispatchEvent(new Event('input', { bubbles: true }));
     });
     await page.waitForFunction(() => !document.querySelector('#yt-thumbnail-tester').shadowRoot.querySelector('.preview').hidden);
-    await page.evaluate(() => document.querySelector('#yt-thumbnail-tester').shadowRoot.querySelector('#select').click());
+    fs.mkdirSync('dist', { recursive: true });
+    await page.screenshot({ path: 'dist/edit-mode.png' });
+    await clickControl(page, '#select');
     await page.mouse.move(150, 150);
     await page.mouse.click(150, 150);
     const result = await page.evaluate(() => {
@@ -147,9 +149,7 @@ async function checkAlignment(page) {
     console.log(JSON.stringify(result));
     assert.equal(result.enabled, true, result.status);
     assert.equal(result.navigations, 0);
-    fs.mkdirSync('dist', { recursive: true });
-    await page.screenshot({ path: 'dist/edit-mode.png' });
-    await clickControl(page, '#apply');
+    assert.equal(await page.evaluate(() => document.querySelector('#yt-thumbnail-tester').shadowRoot.querySelector('.panel').hidden), true, 'selecting immediately applies');
     await checkModes(page);
     await page.screenshot({ path: 'dist/preview-mode.png' });
     assert.equal(await page.$eval('#video-title', title => title.textContent), 'Test title');
@@ -168,7 +168,7 @@ async function checkAlignment(page) {
       }, { className, channelFixture });
       await page.waitForFunction(() => {
         const root = document.querySelector('#yt-thumbnail-tester').shadowRoot;
-        return !root.querySelector('.panel').hidden && root.querySelector('#apply').disabled;
+        return !root.querySelector('.panel').hidden && root.querySelector('#preview-toggle').disabled;
       });
       await page.evaluate(() => document.querySelector('#yt-thumbnail-tester').shadowRoot.querySelector('#select').click());
       await page.mouse.move(150, 150); await page.mouse.click(150, 150);
@@ -186,6 +186,7 @@ async function checkAlignment(page) {
     }
     assert.equal(page.url(), 'https://www.youtube.com/');
     assert.equal(await page.evaluate(() => window.navigations), 0);
+    await checkRandomPlacement(browser);
     console.log('Firefox selection, scroll/resize alignment, channel names, default/custom avatars, hover coverage, and restoration passed for all three card layouts.');
   } finally { await browser.close(); fs.rmSync(extensionDir, { recursive: true, force: true }); }
 })().catch(error => { console.error(error); process.exitCode = 1; });
@@ -219,4 +220,48 @@ async function checkChannelRestored(page) {
   const avatar = await page.$eval('.channel-avatar img', img => ({ src: img.getAttribute('src'), srcset: img.getAttribute('srcset'), alt: img.alt, style: img.style.cssText }));
   assert.equal(avatar.src, 'original-avatar.jpg'); assert.equal(avatar.srcset, 'original-avatar-2x.jpg 2x');
   assert.equal(avatar.alt, 'Original channel'); assert.equal(avatar.style, 'width: 36px; height: 36px; border-radius: 50%;');
+}
+async function checkRandomPlacement(browser) {
+  const page = await browser.newPage();
+  await page.setViewport({ width: 1280, height: 900 });
+  const card = (id, left, top, ad = false) => `<ytd-rich-item-renderer id="${id}" style="position:absolute;left:${left}px;top:${top}px;width:280px">${ad ? '<ytd-ad-slot-renderer></ytd-ad-slot-renderer>' : ''}<ytd-thumbnail style="display:block;width:100%;height:170px;background:#555;border-radius:12px"><a href="/watch?v=${id}"><img style="width:100%;height:170px" alt="Thumbnail"></a></ytd-thumbnail><a id="video-title" href="/watch?v=${id}">${id} original</a>${channelFixture}</ytd-rich-item-renderer>`;
+  const html = `<!doctype html><style>body{margin:0;min-height:2200px}a{display:block}#sticky{position:fixed;top:0;left:0;width:100%;height:72px;background:black;z-index:100}</style><div id="sticky"></div>${card('first', 24, 120)}${card('second', 330, 120)}${card('under-controls', 930, 0)}${card('under-header', 650, -20)}${card('advert', 650, 400, true)}${card('below-fold', 24, 1200)}`;
+  await page.setRequestInterception(true);
+  page.on('request', request => request.respond({ status: 200, contentType: 'text/html', body: html }));
+  await page.goto('https://www.youtube.com/');
+  await page.waitForSelector('#yt-thumbnail-tester');
+  await page.evaluate(async () => {
+    const root = document.querySelector('#yt-thumbnail-tester').shadowRoot;
+    const canvas = document.createElement('canvas'); canvas.width = 16; canvas.height = 9;
+    const blob = await new Promise(resolve => canvas.toBlob(resolve));
+    const files = new DataTransfer(); files.items.add(new File([blob], 'thumbnail.png', { type: 'image/png' }));
+    root.querySelector('#image').files = files.files; root.querySelector('#image').dispatchEvent(new Event('change'));
+    root.querySelector('#title').value = 'Random preview'; root.querySelector('#title').dispatchEvent(new Event('input', { bubbles: true }));
+    root.querySelector('#channel-name').value = 'Random channel';
+  });
+  await page.waitForFunction(() => !document.querySelector('#yt-thumbnail-tester').shadowRoot.querySelector('#apply').disabled);
+  const active = () => page.evaluate(() => document.querySelector('[data-yt-thumbnail-preview]')?.closest('ytd-rich-item-renderer').id || null);
+  await clickControl(page, '#apply');
+  const first = await active(); assert.ok(['first', 'second'].includes(first));
+  const second = first === 'first' ? 'second' : 'first';
+  await clickControl(page, '#randomize'); assert.equal(await active(), second);
+  assert.equal(await page.$eval(`#${first} #video-title`, el => el.textContent), `${first} original`);
+  assert.equal(await page.$eval(`#${second} .channel-name`, el => el.textContent), 'Random channel');
+  assert.equal(await page.evaluate(() => scrollY), 0);
+  await clickControl(page, '#preview-toggle'); await clickControl(page, '#randomize');
+  assert.equal(await active(), null);
+  assert.equal(await page.evaluate(() => document.querySelector('#yt-thumbnail-tester').shadowRoot.querySelector('#preview-state').textContent), 'Off');
+  await clickControl(page, '#preview-toggle'); assert.equal(await active(), first);
+  // Only the other unobstructed video can be chosen; ads and covered cards do
+  // not enter the pool. Accept either initial random choice without mocking it.
+  await clickControl(page, '#randomize'); assert.equal(await active(), second);
+  await page.evaluate(() => scrollTo(0, 1100));
+  await clickControl(page, '#randomize'); assert.equal(await active(), 'below-fold');
+  assert.equal(await page.$eval(`#${second} #video-title`, el => el.textContent), `${second} original`);
+  assert.equal(await page.evaluate(() => scrollY), 1100);
+  await clickControl(page, '#randomize'); assert.equal(await active(), 'below-fold');
+  assert.match(await page.evaluate(() => document.querySelector('#yt-thumbnail-tester').shadowRoot.querySelector('#preview-warning').textContent), /No other eligible videos/);
+  await clickControl(page, '.preview-bar .close');
+  assert.equal(await page.$eval('#below-fold #video-title', el => el.textContent), 'below-fold original');
+  await page.close();
 }

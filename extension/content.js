@@ -18,7 +18,7 @@
     .editor-body{padding:0 20px 12px;overflow:auto;min-height:0}fieldset{border:0;border-bottom:1px solid #293a47;margin:0;padding:16px 0 20px;min-width:0}fieldset:last-child{border:0}legend{float:left;width:100%;font-size:12px;font-weight:700;letter-spacing:1px;color:#61e4bd;margin-bottom:10px}legend+*{clear:both}
     label{display:block;font-size:12px;font-weight:600;margin:12px 0 7px}input,textarea,button{font:inherit}input[type=file]{width:100%;font-size:12px;color:#aabac7}input::file-selector-button{background:#233340;color:#fff;border:0;border-radius:7px;padding:8px;cursor:pointer}input[type=text],textarea{width:100%;border:1px solid #405363;border-radius:9px;background:#0b141c;color:#fff;padding:10px}textarea{resize:vertical;min-height:70px}
     button{border:1px solid #405363;border-radius:9px;padding:9px 12px;background:#233340;color:#f1f6fa;cursor:pointer}button:hover{filter:brightness(1.15)}button:focus-visible,textarea:focus-visible,input:focus-visible{outline:2px solid #61e4bd;outline-offset:3px}button:disabled{opacity:.4;cursor:default}.close{padding:2px 8px;font-size:20px;background:transparent;border:0}.primary{background:#61e4bd;border-color:#61e4bd;color:#08261d;font-weight:700;width:100%}
-    footer{padding:14px 20px;background:#111b24;border-top:1px solid #293a47;flex-shrink:0}.preview{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:10px;background:#233340;margin-top:12px}.status{margin:10px 0 0;font-size:12px;color:#aabac7}.status[data-error=true]{color:#ff9c9c}.hint{font-size:11px;margin:7px 0;color:#91a5b6}.avatar-row{display:flex;align-items:center;gap:12px;margin-top:12px}#channel-preview{display:block;width:40px;height:40px;border-radius:50%;object-fit:cover}#target-status{font-size:12px;color:#aabac7;margin:0 0 10px;overflow-wrap:anywhere}
+    footer{padding:14px 20px;background:#111b24;border-top:1px solid #293a47;flex-shrink:0}.preview{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:10px;background:#233340;margin-top:12px}.status{margin:10px 0 0;font-size:12px;color:#aabac7}.status[data-error=true]{color:#ff9c9c}.hint{font-size:11px;margin:7px 0;color:#91a5b6}.avatar-row{display:flex;align-items:center;gap:12px;margin-top:12px}#channel-preview{display:block;width:40px;height:40px;border-radius:50%;object-fit:cover}
     .preview-bar{border-radius:12px;padding:8px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;width:max-content}.preview-bar .close{margin-left:2px}#preview-toggle{position:relative;display:flex;align-items:center;gap:8px;background:transparent;border-color:transparent;padding:8px}#preview-toggle::before{content:'';width:28px;height:16px;border-radius:20px;background:#526371}#preview-toggle::after{content:'';position:absolute;left:11px;top:50%;transform:translateY(-50%);width:12px;height:12px;border-radius:50%;background:#fff}#preview-toggle[aria-checked=true]::before{background:#61e4bd}#preview-toggle[aria-checked=true]::after{left:23px;background:#08261d}#preview-state{font-weight:700;min-width:20px}#preview-warning{flex-basis:100%;max-width:260px;font-size:11px;color:#ffcc99;padding:0 6px}
     .highlight{display:none;position:fixed;border:3px solid #61e4bd;border-radius:14px;box-shadow:0 0 0 2px #08261d;pointer-events:none}
   </style>
@@ -27,11 +27,10 @@
     <div class="editor-body">
       <fieldset><legend>Video</legend><label for="image">Thumbnail</label><input id="image" type="file" accept="image/jpeg,image/png,image/webp"><div class="hint">JPEG, PNG or WebP · up to 10 MB</div><img class="preview" alt="Your thumbnail preview" hidden><label for="title">Video title</label><textarea id="title" placeholder="Write a title worth clicking…"></textarea></fieldset>
       <fieldset><legend>Channel</legend><label for="channel-name">Username / channel name</label><input id="channel-name" type="text" value="Your channel"><label for="channel-image">Channel image (optional)</label><input id="channel-image" type="file" accept="image/jpeg,image/png,image/webp"><div class="hint">JPEG, PNG or WebP · up to 10 MB</div><div class="avatar-row"><img id="channel-preview" alt="Channel image preview"><button id="default-avatar" type="button" disabled>Use default image</button></div></fieldset>
-      <fieldset><legend>Target video</legend><p id="target-status" aria-live="polite">No video selected</p><button id="select">Select video</button></fieldset>
     </div>
-    <footer><button id="apply" class="primary" disabled>Apply &amp; preview</button><p class="status" role="status" aria-live="polite">Upload a thumbnail and select a video to begin.</p><div class="hint">Saved on this device. Preview only.</div></footer>
+    <footer><div style="display:flex;gap:8px"><button id="apply" class="primary" style="flex:1;width:auto" disabled>Apply</button><button id="select" style="flex:1" disabled>Select &amp; apply</button></div><p class="status" role="status" aria-live="polite">Upload a thumbnail and enter a title to begin.</p><div class="hint">Saved on this device. Preview only.</div></footer>
   </section>
-  <section class="preview-bar" aria-label="Preview Mode" hidden><button id="edit-mode">Edit Mode</button><button id="preview-toggle" role="switch" aria-label="Preview" aria-checked="false" disabled>Preview <span id="preview-state">Off</span></button><button class="close" aria-label="Close tester">×</button><span id="preview-warning" role="status" aria-live="polite" hidden></span></section>
+  <section class="preview-bar" aria-label="Preview Mode" hidden><button id="edit-mode">Edit Mode</button><button id="randomize">Randomize position</button><button id="preview-toggle" role="switch" aria-label="Preview" aria-checked="false" disabled>Preview <span id="preview-state">Off</span></button><button class="close" aria-label="Close tester">×</button><span id="preview-warning" role="status" aria-live="polite" hidden></span></section>
   <div class="highlight"></div>`;
   document.documentElement.append(host);
   const $ = (selector) => root.querySelector(selector);
@@ -140,13 +139,15 @@
     return { card, heading, thumb, video: [...videos][0] };
   }
   const valid = (p) => { const current = p && parts(p.card); return current && current.video === p.video && current.heading === p.heading && current.thumb === p.thumb; };
+  const draftReady = () => Boolean(image && title.value.trim());
   function buttons() {
-    $("#apply").disabled = !image || !title.value.trim() || !valid(selected);
+    $("#apply").disabled = !draftReady();
+    $("#select").disabled = !draftReady() && !selecting;
+    $("#randomize").disabled = !lastPreview || !valid(previewTarget);
     $("#preview-toggle").disabled = !lastPreview || !valid(previewTarget);
     $("#preview-toggle").setAttribute("aria-checked", String(Boolean(applied)));
     $("#preview-state").textContent = applied ? "On" : "Off";
-    $("#select").textContent = selecting ? "Cancel selection" : selected ? "Change video" : "Select video";
-    $("#target-status").textContent = selected ? `Selected: ${selected.label || selected.heading.textContent}` : "No video selected";
+    $("#select").textContent = selecting ? "Cancel selection" : "Select & apply";
   }
   function invalidateTarget(message) {
     restore(); selected = null; previewTarget = null; lastPreview = null;
@@ -218,7 +219,49 @@
     cover.src = config.image;
     thumb.append(coverHost);
   }
-  function cancelSelection() { selecting = false; hovered = null; selectionLayer.style.display = "none"; $("#select").textContent = selected ? "Change video" : "Select video"; }
+  function cancelSelection() { selecting = false; hovered = null; selectionLayer.style.display = "none"; $("#select").textContent = "Select & apply"; $("#select").disabled = !draftReady(); }
+  function findCard(target) {
+    if (!(target instanceof Element) || target === host) return null;
+    for (let card = target.closest(CARD); card; card = card.parentElement?.closest(CARD)) {
+      const p = parts(card); if (p) return p;
+    }
+    for (let ancestor = target, depth = 0; ancestor && depth < 7; depth++, ancestor = ancestor.parentElement) {
+      if (ancestor.matches("main, ytd-rich-grid-renderer, ytd-browse, body, html")) break;
+      const p = parts(ancestor); if (p) return p;
+    }
+    return null;
+  }
+  function visibleThumbnail(p) {
+    const rect = p.thumb.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return false;
+    const width = Math.max(0, Math.min(rect.right, innerWidth) - Math.max(rect.left, 0));
+    const height = Math.max(0, Math.min(rect.bottom, innerHeight) - Math.max(rect.top, 0));
+    if (width * height < rect.width * rect.height / 2) return false;
+    for (let element = p.thumb; element; element = element.parentElement) {
+      const style = getComputedStyle(element);
+      if (style.display === "none" || style.visibility === "hidden" || style.visibility === "collapse" || style.contentVisibility === "hidden" || Number.parseFloat(style.opacity) === 0) return false;
+    }
+    const x = rect.left + rect.width / 2, y = rect.top + rect.height / 2;
+    if (x < 0 || x >= innerWidth || y < 0 || y >= innerHeight) return false;
+    const hit = document.elementFromPoint(x, y);
+    // Includes the attached preview overlay, but excludes sticky headers, page
+    // dialogs, and the tester's own controls when they obscure the thumbnail.
+    return Boolean(hit && (hit === p.thumb || p.thumb.contains(hit)));
+  }
+  const thumbnailKey = p => p.thumb.querySelector("img") || p.thumb;
+  function visibleCards() {
+    const unique = new Map();
+    const add = p => { if (p && !unique.has(thumbnailKey(p))) unique.set(thumbnailKey(p), p); };
+    document.querySelectorAll(CARD).forEach(card => add(parts(card)));
+    // Also cover renderer experiments supported by the protected manual picker.
+    document.querySelectorAll('a[href*="/watch"]').forEach(link => add(findCard(link)));
+    return [...unique.values()].filter(visibleThumbnail);
+  }
+  function randomCard(excludeCurrent) {
+    const currentKey = previewTarget && thumbnailKey(previewTarget);
+    const candidates = visibleCards().filter(p => !excludeCurrent || thumbnailKey(p) !== currentKey);
+    return candidates.length ? candidates[Math.floor(Math.random() * candidates.length)] : null;
+  }
   function cardAtPointer(event) {
     // Hide our host only for synchronous hit testing. This also handles browsers
     // retargeting the shadow event to the host rather than exposing the layer.
@@ -229,23 +272,7 @@
       try { host.style.visibility = "hidden"; targets = document.elementsFromPoint(event.clientX, event.clientY); }
       finally { host.style.visibility = visibility; }
     }
-    for (const target of targets) {
-      if (!(target instanceof Element) || target === host) continue;
-      let card = target.closest(CARD);
-      while (card) {
-        const p = parts(card);
-        if (p) return p;
-        card = card.parentElement?.closest(CARD);
-      }
-      // YouTube experiments can rename renderer classes. Identify a bounded
-      // video card by its thumbnail, title, and a single watch-video identity.
-      let ancestor = target;
-      for (let depth = 0; ancestor && depth < 7; depth++, ancestor = ancestor.parentElement) {
-        if (ancestor.matches("main, ytd-rich-grid-renderer, ytd-browse, body, html")) break;
-        const p = parts(ancestor);
-        if (p) return p;
-      }
-    }
+    for (const target of targets) { const p = findCard(target); if (p) return p; }
     return null;
   }
   function onPointer(event) { if (selecting) hovered = cardAtPointer(event)?.card || null; }
@@ -258,7 +285,8 @@
     event.preventDefault(); event.stopImmediatePropagation();
     const p = cardAtPointer(event);
     if (!p) { status("This is not a supported video card. Choose a standard home-feed video, or press Escape.", true); return; }
-    selected = { ...p, label: p.heading.textContent }; cancelSelection(); status("Video selected. Apply your thumbnail and title."); buttons();
+    if (!draftReady()) { status("Upload a thumbnail and enter a title before applying.", true); return; }
+    startPreview(p);
   }
   function onKey(event) { if (selecting && event.key === "Escape") { event.preventDefault(); cancelSelection(); status("Selection cancelled."); } }
   function save() {
@@ -283,9 +311,10 @@
   $("#select").addEventListener("click", () => {
     if (mode !== "edit") return;
     if (selecting) { cancelSelection(); status("Selection cancelled."); return; }
+    if (!draftReady()) { status("Upload a thumbnail and enter a title before selecting a video.", true); return; }
     selecting = true; hovered = null; selectionLayer.style.display = "block";
     $("#select").textContent = "Cancel selection";
-    status("Click a standard video card. Press Escape to cancel.");
+    status("Click a standard video card to apply immediately. Press Escape to cancel.");
   });
   function applyPreview(target, config) {
     restore();
@@ -305,10 +334,29 @@
   });
   $("#apply").addEventListener("click", () => {
     if (mode !== "edit") return;
-    if (!image || !title.value.trim() || !valid(selected)) { status("Upload a thumbnail, enter a title, and select a video.", true); return; }
+    if (!draftReady()) { status("Upload a thumbnail and enter a title before applying.", true); return; }
+    cancelSelection();
+    const target = randomCard(false);
+    if (!target) { status("No eligible videos are visible. Scroll to some standard video cards and try again.", true); buttons(); return; }
+    startPreview(target);
+  });
+  function startPreview(target) {
+    selected = { ...target };
     previewTarget = { ...selected };
     lastPreview = Object.freeze({ image, title: title.value.trim(), channelName: channelName.value.trim() || "Your channel", channelImage });
     applyPreview(previewTarget, lastPreview); save(); setMode("preview"); buttons();
+  }
+  $("#randomize").addEventListener("click", () => {
+    if (mode !== "preview" || !lastPreview) return;
+    if (!valid(previewTarget)) { invalidateTarget("That video changed or was removed. Select another video."); return; }
+    const target = randomCard(true);
+    if (!target) { previewWarning("No other eligible videos are visible. Scroll to more videos and try again."); return; }
+    const wasOn = Boolean(applied);
+    restore();
+    selected = { ...target }; previewTarget = { ...selected };
+    if (wasOn) applyPreview(previewTarget, lastPreview);
+    else { previewWarning(); status("Preview target moved. Switch Preview On to see it."); }
+    highlight.style.display = "none"; buttons();
   });
   title.addEventListener("input", () => { buttons(); clearTimeout(saveTimer); saveTimer = setTimeout(save, 300); });
   channelName.addEventListener("input", () => { updateChannelPreview(); clearTimeout(saveTimer); saveTimer = setTimeout(save, 300); });

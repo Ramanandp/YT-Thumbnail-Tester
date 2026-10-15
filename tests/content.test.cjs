@@ -12,6 +12,15 @@ const fixture = `<ytd-rich-item-renderer id="one"><ytd-thumbnail><a href="/watch
 async function setup(options = {}) {
   const dom = new JSDOM(fixture, { url: 'https://www.youtube.com/', runScripts: 'outside-only' });
   const w = dom.window;
+  w.Math.random = () => 0;
+  const rect = (element, left, top, width = 300, height = 170) => {
+    element.getBoundingClientRect = () => ({ left, top, width, height, right: left + width, bottom: top + height, x: left, y: top });
+  };
+  rect(w.document.querySelector('#one ytd-thumbnail'), 20, 100);
+  rect(w.document.querySelector('#two .yt-lockup-view-model__content-image'), 350, 100);
+  w.document.elementFromPoint = (x, y) => [...w.document.querySelectorAll('ytd-thumbnail, .yt-lockup-view-model__content-image')].find(element => {
+    const r = element.getBoundingClientRect(); return r.width > 0 && r.height > 0 && x >= r.left && x < r.right && y >= r.top && y < r.bottom;
+  }) || w.document.body;
   const saved = [];
   let nextFrame;
   w.requestAnimationFrame = cb => { nextFrame = cb; return 1; };
@@ -28,7 +37,7 @@ async function setup(options = {}) {
   const select = id => { if ($('.panel').hidden) $('#edit-mode').click(); $('#select').click(); const card = w.document.getElementById(id); return card.querySelector('a').dispatchEvent(new w.MouseEvent('click', { bubbles: true, cancelable: true })); };
   const tick = () => { const cb = nextFrame; nextFrame = null; cb?.(); };
   const flush = () => new Promise(resolve => setImmediate(resolve));
-  return { dom, w, root, $, select, tick, flush, saved };
+  return { dom, w, root, $, select, tick, flush, saved, rect };
 }
 test('loads a draft without applying it, selects without navigation, restores actual original nodes', async t => {
   const c = await setup(); t.after(() => c.dom.window.close());
@@ -37,7 +46,8 @@ test('loads a draft without applying it, selects without navigation, restores ac
   assert.equal(heading.textContent, 'Original title');
   assert.equal(c.select('one'), false);
   c.tick();
-  assert.equal(c.$('.highlight').style.display, 'block');
+  assert.equal(c.$('.highlight').style.display, 'none');
+  assert.equal(c.$('.panel').hidden, true, 'manual selection applies immediately');
   assert.equal(c.$('#apply').disabled, false);
   c.$('#apply').click();
   assert.equal(c.$('.highlight').style.display, 'none');
@@ -66,12 +76,12 @@ test('Escape cancels selection and ineligible cards are not intercepted', async 
   const c = await setup(); t.after(() => c.dom.window.close());
   c.$('#select').click();
   c.w.dispatchEvent(new c.w.KeyboardEvent('keydown', { key: 'Escape', cancelable: true }));
-  assert.equal(c.$('#select').textContent, 'Select video');
+  assert.equal(c.$('#select').textContent, 'Select & apply');
   for (const id of ['playlist', 'short', 'ad']) {
     c.$('#select').click();
     assert.equal(c.w.document.querySelector(`#${id} a`).dispatchEvent(new c.w.MouseEvent('click', { bubbles: true, cancelable: true })), false);
     assert.match(c.$('.status').textContent, /not a supported video card/);
-    assert.equal(c.$('#apply').disabled, true);
+    assert.equal(c.$('#apply').disabled, false); assert.equal(c.$('#target-status'), null);
     c.w.dispatchEvent(new c.w.KeyboardEvent('keydown', { key: 'Escape' }));
   }
 });
@@ -150,7 +160,7 @@ test('semantic fallback does not select a shelf with multiple video identities',
   c.w.document.elementsFromPoint = () => [shelf.querySelector('img'), shelf];
   c.$('#select').click();
   c.root.firstChild.dispatchEvent(new c.w.MouseEvent('click', { bubbles: true, composed: true, cancelable: true }));
-  assert.equal(c.$('#apply').disabled, true);
+  assert.equal(c.$('#apply').disabled, false); assert.equal(c.$('#target-status'), null);
 });
 test('cancel and close remove the shield and gesture blocking; unsupported hits stay in selection', async t => {
   const c = await setup(); t.after(() => c.dom.window.close());
@@ -177,7 +187,7 @@ test('removed and recycled cards clear preview without overwriting YouTube updat
   card.querySelector('#video-title').textContent = 'Recycled title';
   c.tick();
   assert.equal(card.querySelector('#video-title').textContent, 'Recycled title');
-  assert.equal(c.$('#apply').disabled, true);
+  assert.equal(c.$('#apply').disabled, false); assert.equal(c.$('#target-status'), null);
   assert.equal(c.w.document.querySelector('[data-yt-thumbnail-preview]'), null);
   c.select('two'); c.$('#apply').click(); c.w.document.getElementById('two').remove(); c.tick();
   assert.equal(c.$('#preview-toggle').disabled, true);
@@ -259,7 +269,7 @@ test('YouTube title changes and removed overlays clean up the attached preview a
     c.tick();
     assert.equal(c.w.document.querySelector('[data-yt-thumbnail-preview]'), null);
     assert.equal(thumb.hasAttribute('style'), false);
-    assert.equal(c.$('#apply').disabled, true);
+    assert.equal(c.$('#apply').disabled, false); assert.equal(c.$('#target-status'), null);
     assert.equal(c.$('#preview-toggle').disabled, true);
     if (reason === 'title') assert.equal(c.w.document.querySelector('#one #video-title').textContent, 'Updated by YouTube');
   }
@@ -413,7 +423,7 @@ test('recycling the target while Preview is off returns to editing and disables 
   assert.equal(c.$('.panel').hidden, false);
   assert.equal(c.$('.preview-bar').hidden, true);
   assert.equal(c.$('#preview-toggle').disabled, true);
-  assert.equal(c.$('#apply').disabled, true);
+  assert.equal(c.$('#apply').disabled, false); assert.equal(c.$('#target-status'), null);
   assert.match(c.$('.status').textContent, /changed or was removed/);
   assert.equal(c.w.document.querySelector('#one #video-title').textContent, 'Recycled video');
 });
@@ -431,4 +441,110 @@ test('closing or navigating while off leaves original content and reopens in edi
     assert.equal(root.querySelector('.preview-bar').hidden, true);
     assert.equal(root.querySelector('#preview-toggle').disabled, true);
   }
+});
+test('Apply needs only a valid draft, chooses a visible card, and supports an empty visible feed', async t => {
+  const c = await setup(); t.after(() => c.dom.window.close());
+  assert.equal(c.$('#apply').disabled, false);
+  assert.equal(c.$('#select').disabled, false);
+  assert.equal(c.$('#target-status'), null);
+  c.w.scrollTo = () => { throw Error('Applying must never scroll'); };
+  c.$('#apply').click();
+  assert.equal(c.w.document.querySelector('#one #video-title').textContent, 'My new video');
+  assert.equal(c.$('.preview-bar').hidden, false);
+  c.$('#preview-toggle').click(); c.$('#edit-mode').click();
+  c.rect(c.w.document.querySelector('#one ytd-thumbnail'), 20, 1200);
+  c.rect(c.w.document.querySelector('#two .yt-lockup-view-model__content-image'), 20, 1500);
+  c.$('#apply').click();
+  assert.equal(c.$('.panel').hidden, false);
+  assert.equal(c.w.document.querySelector('#one #video-title').textContent, 'Original title');
+  assert.match(c.$('.status').textContent, /No eligible videos are visible/);
+  for (const draft of [{ title: 'Title only' }, { image: thumbnail }]) {
+    const d = await setup({ draft }); t.after(() => d.dom.window.close());
+    assert.equal(d.$('#apply').disabled, true); assert.equal(d.$('#select').disabled, true);
+  }
+});
+test('randomizing restores the old card, moves all fields, preserves the applied snapshot, and stays off', async t => {
+  const c = await setup(); t.after(() => c.dom.window.close());
+  const one = c.w.document.getElementById('one'), two = c.w.document.getElementById('two');
+  two.insertAdjacentHTML('beforeend', '<a class="channel-name" href="/@second">Second channel</a><a id="avatar-link" href="/@second"><img src="second-avatar.jpg"></a>');
+  c.$('#channel-name').value = 'eridium'; c.$('#apply').click();
+  // Unapplied editor fields must not leak into randomization.
+  c.$('#title').value = 'Unapplied title'; c.$('#channel-name').value = 'Unapplied channel';
+  c.$('#randomize').click(); c.tick();
+  assert.equal(one.querySelector('#video-title').textContent, 'Original title');
+  assert.equal(one.querySelector('.channel-name').textContent, 'Original channel');
+  assert.equal(one.querySelector('#avatar-link img').getAttribute('src'), 'avatar.jpg');
+  assert.equal(two.querySelector('h3').textContent, 'My new video');
+  assert.equal(two.querySelector('.channel-name').textContent, 'eridium');
+  assert.match(two.querySelector('#avatar-link img').getAttribute('src'), /^data:image\/svg\+xml/);
+  assert.equal(c.$('.highlight').style.display, 'none');
+  c.$('#preview-toggle').click();
+  c.$('#randomize').click();
+  assert.equal(c.$('#preview-state').textContent, 'Off');
+  assert.equal(c.w.document.querySelector('[data-yt-thumbnail-preview]'), null);
+  assert.equal(two.querySelector('h3').textContent, 'Second title');
+  assert.equal(two.querySelector('#avatar-link img').getAttribute('src'), 'second-avatar.jpg');
+  c.$('#preview-toggle').click();
+  assert.equal(one.querySelector('#video-title').textContent, 'My new video');
+  c.$('#edit-mode').click();
+  assert.equal(c.$('#title').value, 'Unapplied title');
+});
+test('no alternative retains the current preview and reports the issue without changing toggle state', async t => {
+  for (const off of [false, true]) {
+    const c = await setup(); t.after(() => c.dom.window.close());
+    c.$('#apply').click(); if (off) c.$('#preview-toggle').click();
+    c.rect(c.w.document.querySelector('#two .yt-lockup-view-model__content-image'), 20, 1400);
+    c.$('#randomize').click();
+    assert.equal(c.$('#preview-state').textContent, off ? 'Off' : 'On');
+    assert.match(c.$('#preview-warning').textContent, /No other eligible videos/);
+    assert.equal(c.$('.preview-bar').hidden, false);
+    assert.equal(c.w.document.querySelector('#one #video-title').textContent, off ? 'Original title' : 'My new video');
+  }
+});
+test('random candidates exclude hidden, obstructed, offscreen, and insufficiently visible thumbnails', async t => {
+  const scenarios = ['offscreen', 'partial', 'display', 'opacity', 'header', 'tester'];
+  for (const scenario of scenarios) {
+    const c = await setup(); t.after(() => c.dom.window.close());
+    const thumb = c.w.document.querySelector('#one ytd-thumbnail');
+    if (scenario === 'offscreen') c.rect(thumb, 10, 1000);
+    if (scenario === 'partial') c.rect(thumb, -140, -50);
+    if (scenario === 'display') thumb.parentElement.style.display = 'none';
+    if (scenario === 'opacity') thumb.parentElement.style.opacity = '0';
+    if (scenario === 'header' || scenario === 'tester') {
+      const hitTest = c.w.document.elementFromPoint;
+      c.w.document.elementFromPoint = (x, y) => x < 340 ? (scenario === 'tester' ? c.w.document.querySelector('#yt-thumbnail-tester') : c.w.document.body) : hitTest(x, y);
+    }
+    c.$('#apply').click();
+    assert.equal(c.w.document.querySelector('#two h3').textContent, 'My new video', scenario);
+    assert.equal(c.w.document.querySelector('#one #video-title').textContent, 'Original title', scenario);
+  }
+  const c = await setup(); t.after(() => c.dom.window.close());
+  c.rect(c.w.document.querySelector('#one ytd-thumbnail'), 20, -85);
+  c.$('#apply').click();
+  assert.equal(c.w.document.querySelector('#one #video-title').textContent, 'My new video', 'exactly half visible is eligible when its center is unobstructed');
+});
+test('randomization deduplicates nested renderers and excludes Shorts, ads, and playlists', async t => {
+  const c = await setup(); t.after(() => c.dom.window.close());
+  const one = c.w.document.getElementById('one'), nested = c.w.document.createElement('ytd-rich-grid-media');
+  nested.append(...one.childNodes); one.append(nested);
+  for (const id of ['short', 'ad', 'playlist']) c.rect(c.w.document.querySelector(`#${id} ytd-thumbnail`), 700, 100);
+  c.w.Math.random = () => 0.55;
+  c.$('#apply').click();
+  assert.equal(c.w.document.querySelector('#two h3').textContent, 'My new video');
+  assert.equal(one.querySelector('#video-title').textContent, 'Original title');
+  assert.equal(c.w.document.querySelector('#ad #video-title').textContent, 'Ad');
+});
+test('Select & apply cancels without changing the existing preview and validates the current draft', async t => {
+  const c = await setup(); t.after(() => c.dom.window.close());
+  c.$('#apply').click(); c.$('#edit-mode').click(); c.$('#select').click();
+  c.w.dispatchEvent(new c.w.KeyboardEvent('keydown', { key: 'Escape' }));
+  assert.equal(c.$('.panel').hidden, false);
+  assert.equal(c.w.document.querySelector('#one #video-title').textContent, 'My new video');
+  c.$('#select').click();
+  c.$('#title').value = ''; c.$('#title').dispatchEvent(new c.w.Event('input', { bubbles: true }));
+  c.w.document.querySelector('#two a').dispatchEvent(new c.w.MouseEvent('click', { bubbles: true, cancelable: true }));
+  assert.equal(c.w.document.querySelector('#two h3').textContent, 'Second title');
+  assert.match(c.$('.status').textContent, /enter a title/);
+  c.w.dispatchEvent(new c.w.KeyboardEvent('keydown', { key: 'Escape' }));
+  assert.equal(c.$('#select').disabled, true);
 });
